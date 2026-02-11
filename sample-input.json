@@ -1,0 +1,28 @@
+[
+  {
+    "json": {
+      "execution_data": {
+        "id": "123",
+        "url": "https://example.com/executions/123",
+        "mode": "manual",
+        "error": {
+          "message": "Timeout ao consultar API",
+          "stack": "Error: Timeout\n    at request (/app/index.js:10:5)"
+        }
+      }
+    }
+  },
+  {
+    "json": {
+      "execution_data": {
+        "id": "124",
+        "url": "",
+        "mode": "trigger",
+        "error": {
+          "message": "Token inválido",
+          "stack": "Error: 401 Unauthorized\n    at auth (/app/auth.js:4:2)"
+        }
+      }
+    }
+  }
+]

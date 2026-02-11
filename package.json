@@ -1,0 +1,11 @@
+{
+  "name": "relatorio-n8n",
+  "version": "1.0.0",
+  "description": "Relatório de erros para n8n com saída HTML",
+  "main": "relatorio.js",
+  "scripts": {
+    "start": "node run.js",
+    "debug": "node --inspect-brk run.js"
+  },
+  "license": "UNLICENSED"
+}
