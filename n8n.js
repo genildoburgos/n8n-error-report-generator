@@ -12,6 +12,17 @@ function esc(s) {
     .replaceAll("'", "&#39;");
 }
 
+function formatDate(d) {
+  if (!d || d === "desconhecido") return "desconhecido";
+  
+  const parsed = new Date(d);
+  // Se a data for inválida (ex: uma string aleatória), retorna o valor original
+  if (isNaN(parsed.getTime())) return d;
+  
+  // Retorna no formato DD/MM/AAAA, HH:MM:SS
+  return parsed.toLocaleString('pt-BR');
+}
+
 function pick(obj, path, fallback = "") {
   // pega caminho tipo "execution_data.error.message"
   try {
@@ -21,49 +32,57 @@ function pick(obj, path, fallback = "") {
   }
 }
 
-function shorten(str, max = 140) {
-  const s = String(str ?? "");
-  return s.length > max ? s.slice(0, max - 1) + "…" : s;
-}
-
 // ---------- normalize ----------
 const erros = items.map((it, idx) => {
   const raw = it.json ?? it; // por segurança
-  const ex = raw.execution_data ?? raw; // se já vier "flat"
-
+  const ex = raw; // se já vier "flat"
   const id = pick(ex, "id", pick(raw, "id", `#${idx + 1}`));
-  const url = pick(ex, "url", "");
-  const mode = pick(ex, "mode", "desconhecido");
+  const url = pick(ex, "execution_url", "");
+  const mode = pick(ex, "execution_mode", "desconhecido");
+  const date = formatDate(pick(ex, "created_at", "desconhecido"));
+  const workflow_name = pick(ex, "workflow_data.name", "Não encontrado");
+  const workflow_id = pick(ex, "workflow_data.id", "Não encontrado");
+  const message = pick(ex, "error_message", pick(ex, "error", "Erro sem mensagem"));
+  const stack = pick(ex, "execution_data.error.stack", "");
+  const level = pick(ex, "execution_data.error.level", "Sem level");
 
-  const message = pick(ex, "error.message", pick(ex, "error", "Erro sem mensagem"));
-  const stack = pick(ex, "error.stack", "");
+  const error_name = pick(ex, "execution_data.error.name", "Erro Desconhecido");
+  const node_name = pick(ex, "execution_data.error.node.name", pick(ex, "execution_data.lastNodeExecuted", "Nó Desconhecido"));
+  const node_type = pick(ex, "execution_data.error.node.type", "-");
+  const trigger_name = pick(ex, "execution_data.executionContext.triggerNode.name", "-");
 
   return {
     idx: idx + 1,
     id,
     url,
     mode,
+    workflow_name,
+    workflow_id,
+    date,
+    level,
     message,
     stack,
+    error_name,
+    node_name,
+    node_type,
+    trigger_name,
     raw, // opcional p/ debug
   };
 });
 
 // ---------- summary ----------
 const total = erros.length;
-
-const byMode = new Map();
 const byMsg = new Map();
+const byWorkflowName = new Map();
+const byLevel = new Map();
 
 for (const e of erros) {
-  byMode.set(e.mode, (byMode.get(e.mode) ?? 0) + 1);
-
-  const key = shorten(e.message, 160);
-  byMsg.set(key, (byMsg.get(key) ?? 0) + 1);
+  byWorkflowName.set(e.workflow_name, (byWorkflowName.get(e.workflow_name) ?? 0) + 1);
+  byLevel.set(e.level, (byLevel.get(e.level) ?? 0) + 1);
 }
 
-const modesSorted = [...byMode.entries()].sort((a, b) => b[1] - a[1]);
-const msgsSorted = [...byMsg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+const workflowsNameSorted = [...byWorkflowName.entries()].sort((a, b) => b[1] - a[1]);
+const levelsSorted = [...byLevel.entries()].sort((a, b) => b[1] - a[1]);
 
 // ---------- html ----------
 const now = new Date();
@@ -74,36 +93,44 @@ const summaryHtml = `
     <div class="card kpi">
       <div class="kpiTitle">Total de erros</div>
       <div class="kpiValue">${total}</div>
-      <div class="kpiSub">Atualizado em ${esc(iso)}</div>
+      <div class="kpiSub">Atualizado em ${esc(formatDate(iso))}</div>
     </div>
 
     <div class="card">
-      <div class="cardTitle">Por modo</div>
+      <div class="cardTitle">Top WorkFlow</div>
       <div class="chips">
         ${
-          modesSorted.length
-            ? modesSorted.map(([m, c]) => `<span class="chip"><b>${esc(m)}</b> <span class="muted">(${c})</span></span>`).join("")
+          workflowsNameSorted.length
+            ? workflowsNameSorted.slice(0, 10).map(([m, c]) => `<span class="chip"><b>${esc(m)}</b> <span class="muted">(${c})</span></span>`).join("")
             : `<span class="muted">Sem dados</span>`
         }
       </div>
     </div>
 
     <div class="card">
-      <div class="cardTitle">Top mensagens</div>
-      <ol class="toplist">
+      <div class="cardTitle">Top Level</div>
+      <div class="chips">
         ${
-          msgsSorted.length
-            ? msgsSorted.map(([m, c]) => `<li><span class="msg">${esc(m)}</span> <span class="muted">(${c})</span></li>`).join("")
-            : `<li class="muted">Sem dados</li>`
+          levelsSorted.length
+            ? levelsSorted.map(([m, c]) => `<span class="chip"><b>${esc(m)}</b> <span class="muted">(${c})</span></span>`).join("")
+            : `<span class="muted">Sem dados</span>`
         }
-      </ol>
+      </div>
     </div>
   </div>
 `;
 
-const listHtml = erros.map(e => {
+const listHtml = erros.slice().reverse().map(e => {
   const link = e.url ? `<a class="link" href="${esc(e.url)}" target="_blank" rel="noreferrer">Abrir execução</a>` : `<span class="muted">Sem URL</span>`;
-  const stackBlock = e.stack ? `<details><summary>Stack trace</summary><pre>${esc(e.stack)}</pre></details>` : `<div class="muted">Sem stack trace</div>`;
+  const detailsContent = `
+    <div class="techDetails">
+      <div>Tipo de Erro: <span class="muted">${esc(e.error_name)}</span></div>
+      <div>Nó que falhou: <span class="muted">${esc(e.node_name)}</span> <span style="font-size:10px; opacity:0.6;">(${esc(e.node_type)})</span></div>
+      <div>Gatilho: <span class="muted">${esc(e.trigger_name)}</span></div>
+    </div>
+    ${e.stack ? `<pre>${esc(e.stack)}</pre>` : `<div class="muted" style="margin-top:10px;">Sem stack trace disponível.</div>`}
+  `;
+  const stackBlock = `<details><summary>Detalhes técnicos e Stack trace</summary>${detailsContent}</details>`;
 
   return `
     <div class="card errorCard">
@@ -111,9 +138,12 @@ const listHtml = erros.map(e => {
         <div>
           <div class="titleLine">
             <span class="badge">#${esc(e.id)}</span>
+            <span class="badge">${esc(e.date)}</span>
             <span class="mode">${esc(e.mode)}</span>
+            <span class="mode">${esc(e.workflow_name)}</span>
+            <span class="mode">${esc(e.workflow_id)}</span>
           </div>
-          <div class="message">${esc(e.message)}</div>
+          <div class="message">${esc(e.message)} - ${esc(e.level)}</div>
         </div>
         <div class="right">
           ${link}
@@ -253,7 +283,7 @@ const html = `
         <h1>Relatório de erros (n8n)</h1>
         <div class="sub">Consolidado a partir de ${total} item(ns) recebidos no node Code.</div>
       </div>
-      <div class="sub">${esc(iso)}</div>
+      <div class="sub">${esc(formatDate(iso))}</div>
     </header>
 
     ${summaryHtml}
