@@ -72,7 +72,6 @@ const erros = items.map((it, idx) => {
 
 // ---------- summary ----------
 const total = erros.length;
-const byMsg = new Map();
 const byWorkflowName = new Map();
 const byLevel = new Map();
 
@@ -91,28 +90,35 @@ const iso = now.toISOString();
 const summaryHtml = `
   <div class="grid">
     <div class="card kpi">
-      <div class="kpiTitle">Total de erros</div>
+      <div class="kpiTitle">Total de ocorrências</div>
       <div class="kpiValue">${total}</div>
       <div class="kpiSub">Atualizado em ${esc(formatDate(iso))}</div>
     </div>
 
     <div class="card">
-      <div class="cardTitle">Top WorkFlow</div>
+      <div class="cardTitle">Top Workflows</div>
       <div class="chips">
         ${
           workflowsNameSorted.length
-            ? workflowsNameSorted.slice(0, 10).map(([m, c]) => `<span class="chip"><b>${esc(m)}</b> <span class="muted">(${c})</span></span>`).join("")
+            ? workflowsNameSorted.slice(0, 5).map(([m, c]) => `<span class="chip"><b>${esc(m)}</b> <span class="muted">(${c})</span></span>`).join("")
             : `<span class="muted">Sem dados</span>`
         }
       </div>
     </div>
 
     <div class="card">
-      <div class="cardTitle">Top Level</div>
+      <div class="cardTitle">Top Níveis (Levels)</div>
       <div class="chips">
         ${
           levelsSorted.length
-            ? levelsSorted.map(([m, c]) => `<span class="chip"><b>${esc(m)}</b> <span class="muted">(${c})</span></span>`).join("")
+            ? levelsSorted.map(([m, c]) => {
+                // Pinta os chips do resumo também
+                let chipColor = "";
+                const lvl = String(m).toLowerCase();
+                if (lvl.includes("error") || lvl.includes("danger")) chipColor = "background:#fee2e2; color:#991b1b; border-color:#f87171;";
+                else if (lvl.includes("warn")) chipColor = "background:#fef3c7; color:#92400e; border-color:#fbbf24;";
+                return `<span class="chip" style="${chipColor}"><b>${esc(m)}</b> <span style="opacity:0.7;">(${c})</span></span>`
+              }).join("")
             : `<span class="muted">Sem dados</span>`
         }
       </div>
@@ -121,29 +127,46 @@ const summaryHtml = `
 `;
 
 const listHtml = erros.slice().reverse().map(e => {
-  const link = e.url ? `<a class="link" href="${esc(e.url)}" target="_blank" rel="noreferrer">Abrir execução</a>` : `<span class="muted">Sem URL</span>`;
+  const link = e.url ? `<a class="link" href="${esc(e.url)}" target="_blank" rel="noreferrer">Abrir execução no n8n</a>` : `<span class="muted">Sem URL</span>`;
+  
+  // Definição de cores baseada no Level
+  let levelClass = "level-default";
+  let borderClass = "";
+  const lvl = String(e.level).toLowerCase();
+  
+  if (lvl.includes("error") || lvl.includes("danger") || lvl.includes("fatal")) {
+    levelClass = "level-error";
+    borderClass = "border-error";
+  } else if (lvl.includes("warn")) {
+    levelClass = "level-warning";
+    borderClass = "border-warning";
+  } else if (lvl.includes("info")) {
+    levelClass = "level-info";
+    borderClass = "border-info";
+  }
+
   const detailsContent = `
     <div class="techDetails">
-      <div>Tipo de Erro: <span class="muted">${esc(e.error_name)}</span></div>
-      <div>Nó que falhou: <span class="muted">${esc(e.node_name)}</span> <span style="font-size:10px; opacity:0.6;">(${esc(e.node_type)})</span></div>
-      <div>Gatilho: <span class="muted">${esc(e.trigger_name)}</span></div>
+      <div><b>Tipo de Erro:</b> <span class="muted">${esc(e.error_name)}</span></div>
+      <div><b>Nó que falhou:</b> <span class="muted">${esc(e.node_name)}</span> <span style="font-size:10px; opacity:0.6;">(${esc(e.node_type)})</span></div>
+      <div><b>Gatilho:</b> <span class="muted">${esc(e.trigger_name)}</span></div>
     </div>
     ${e.stack ? `<pre>${esc(e.stack)}</pre>` : `<div class="muted" style="margin-top:10px;">Sem stack trace disponível.</div>`}
   `;
+  
   const stackBlock = `<details><summary>Detalhes técnicos e Stack trace</summary>${detailsContent}</details>`;
 
   return `
-    <div class="card errorCard">
+    <div class="card errorCard ${borderClass}">
       <div class="row">
         <div>
           <div class="titleLine">
+            <span class="badge ${levelClass}">${esc(e.level).toUpperCase()}</span>
             <span class="badge">#${esc(e.id)}</span>
             <span class="badge">${esc(e.date)}</span>
-            <span class="mode">${esc(e.mode)}</span>
             <span class="mode">${esc(e.workflow_name)}</span>
-            <span class="mode">${esc(e.workflow_id)}</span>
           </div>
-          <div class="message">${esc(e.message)} - ${esc(e.level)}</div>
+          <div class="message">${esc(e.message)}</div>
         </div>
         <div class="right">
           ${link}
@@ -162,138 +185,191 @@ const html = `
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Relatório de erros (n8n)</title>
+  <title>Relatório de Ocorrências - n8n</title>
   <style>
     :root{
-      --bg:#0b1020;
-      --card:#121a33;
-      --muted:#a8b3cf;
-      --text:#e9eeff;
-      --accent:#7aa2ff;
-      --danger:#ff6b6b;
-      --border:rgba(255,255,255,.08);
+      --bg: #f3f4f6;
+      --card: #ffffff;
+      --muted: #6b7280;
+      --text: #111827;
+      --border: #e5e7eb;
+      --link: #2563eb;
     }
     *{box-sizing:border-box}
     body{
       margin:0;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-      background: radial-gradient(1200px 600px at 20% 0%, rgba(122,162,255,.25), transparent 55%),
-                  radial-gradient(900px 500px at 90% 10%, rgba(255,107,107,.18), transparent 60%),
-                  var(--bg);
-      color:var(--text);
+      background: var(--bg);
+      color: var(--text);
       padding:24px;
     }
     .wrap{max-width:1100px;margin:0 auto}
     header{
       display:flex; align-items:flex-end; justify-content:space-between;
       gap:16px; margin-bottom:18px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
     }
-    h1{margin:0;font-size:22px;letter-spacing:.2px}
+    h1{margin:0;font-size:24px;letter-spacing:-0.5px; color:#111827;}
     .sub{color:var(--muted);font-size:13px}
     .grid{
       display:grid;
       grid-template-columns: 1fr 1fr 1fr;
-      gap:12px;
-      margin:14px 0 18px;
+      gap:16px;
+      margin:14px 0 24px;
     }
     @media (max-width: 900px){
       .grid{grid-template-columns:1fr}
     }
     .card{
-      background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
+      background: var(--card);
       border:1px solid var(--border);
-      border-radius:14px;
-      padding:14px;
-      box-shadow: 0 8px 30px rgba(0,0,0,.25);
+      border-radius:8px;
+      padding:16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-    .kpiTitle{color:var(--muted);font-size:12px}
-    .kpiValue{font-size:34px;font-weight:800;margin-top:6px}
+    .kpiTitle{color:var(--muted);font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px;}
+    .kpiValue{font-size:32px;font-weight:800;margin-top:4px; color:#111827;}
     .kpiSub{color:var(--muted);font-size:12px;margin-top:4px}
-    .cardTitle{font-weight:700;margin-bottom:10px}
+    .cardTitle{font-weight:600;margin-bottom:12px; font-size:14px; color:#374151;}
     .chips{display:flex;flex-wrap:wrap;gap:8px}
     .chip{
       border:1px solid var(--border);
-      border-radius:999px;
-      padding:6px 10px;
+      border-radius:6px;
+      padding:4px 8px;
       font-size:12px;
-      background: rgba(255,255,255,.02);
+      background: #f9fafb;
+      color: #374151;
     }
-    .toplist{margin:0;padding-left:18px;color:var(--text)}
-    .toplist li{margin:6px 0}
-    .msg{color:var(--text)}
+
+    .chip-count {
+      background: #e5e7eb;
+      color: #374151;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    /* Cores Especiais para os Chips de Nível (Resumo) */
+    .chip-error { background: #fef2f2; border-color: #fca5a5; color: #991b1b; }
+    .chip-error .chip-count { background: #fee2e2; color: #991b1b; }
+    
+    .chip-warning { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
+    .chip-warning .chip-count { background: #fef3c7; color: #92400e; }
+    
+    .chip-info { background: #eff6ff; border-color: #93c5fd; color: #1e40af; }
+    .chip-info .chip-count { background: #dbeafe; color: #1e40af; }
     .muted{color:var(--muted)}
-    .errorCard{margin-bottom:12px}
+
+    .muted{color:var(--muted)}
+    
+    /* Cores Dinâmicas dos Cards */
+    .errorCard{margin-bottom:16px; border-left-width: 4px;}
+    .border-error { border-left-color: #ef4444; }
+    .border-warning { border-left-color: #f59e0b; }
+    .border-info { border-left-color: #3b82f6; }
+
     .row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
     .right{white-space:nowrap}
-    .titleLine{display:flex;gap:10px;align-items:center;margin-bottom:8px}
-    .badge{
-      background: rgba(255,255,255,.06);
-      border:1px solid var(--border);
-      padding:4px 8px;
-      border-radius:10px;
-      font-size:12px;
-      font-weight:700;
+    .titleLine{display:flex;gap:8px;align-items:center;margin-bottom:10px; flex-wrap:wrap;}
+    
+    /* Badges base */
+    .badge, .mode {
+      color: #0f172a; 
+      background: #e2e8f0; 
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid #cbd5e1;
+      padding: 3px 8px;
+      border-radius: 6px;
     }
+    
+    /* Cores dos Badges de Nível */
+    .level-error { background: #fee2e2; color: #991b1b; border-color: #f87171; }
+    .level-warning { background: #fef3c7; color: #92400e; border-color: #fbbf24; }
+    .level-info { background: #dbeafe; color: #1e40af; border-color: #60a5fa; }
+    .level-default { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+
     .mode{
-      color: var(--accent);
-      font-size:12px;
-      border:1px solid rgba(122,162,255,.35);
-      background: rgba(122,162,255,.10);
-      padding:3px 8px;
-      border-radius:999px;
+      color: #0f172a; /* Texto quase preto para contraste máximo */
+      background: #e2e8f0; /* Fundo cinza um pouco mais preenchido */
+      font-size: 11px;
+      font-weight: 600; /* Texto mais grosso */
+      border: 1px solid #cbd5e1; /* Borda mais visível */
+      padding: 3px 8px;
+      border-radius: 6px;
     }
     .message{
-      font-size:14px;
-      line-height:1.35;
+      font-size:15px;
+      line-height:1.5;
+      font-weight: 500;
+      color: #1f2937;
     }
     .link{
-      color: var(--text);
+      color: var(--link);
       text-decoration:none;
-      border-bottom:1px dashed rgba(255,255,255,.35);
-      font-size:12px;
+      font-size:13px;
+      font-weight:500;
     }
+    .link:hover { text-decoration: underline; }
+    
     details{
-      margin-top:10px;
+      margin-top:14px;
       border-top: 1px solid var(--border);
-      padding-top:10px;
+      padding-top:12px;
     }
     summary{
       cursor:pointer;
-      color: var(--muted);
-      font-size:12px;
+      color: #4b5563;
+      font-size:13px;
+      font-weight: 500;
+    }
+    summary:hover { color: #111827; }
+    .techDetails {
+      margin-top: 12px;
+      padding: 12px;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #334155;
     }
     pre{
       margin:10px 0 0;
       padding:12px;
-      border-radius:12px;
+      border-radius:6px;
       overflow:auto;
-      background: rgba(0,0,0,.35);
-      border:1px solid var(--border);
+      background: #1e293b;
+      border:1px solid #0f172a;
       font-size:12px;
-      line-height:1.35;
-      color: #e9eeff;
+      line-height:1.4;
+      color: #f8fafc;
     }
-    footer{margin-top:18px;color:var(--muted);font-size:12px}
+    footer{margin-top:24px; text-align:center; color:var(--muted); font-size:12px;}
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <div>
-        <h1>Relatório de erros (n8n)</h1>
-        <div class="sub">Consolidado a partir de ${total} item(ns) recebidos no node Code.</div>
+        <h1>Relatório de Ocorrências</h1>
+        <div class="sub">Consolidado a partir de ${total} registro(s) do n8n.</div>
       </div>
-      <div class="sub">${esc(formatDate(iso))}</div>
+      <div class="sub" style="text-align:right;">
+        <b>Gerado em:</b><br>${esc(formatDate(iso))}
+      </div>
     </header>
 
     ${summaryHtml}
 
     <section>
-      ${total ? listHtml : `<div class="card"><span class="muted">Nenhum erro recebido.</span></div>`}
+      ${total ? listHtml : `<div class="card"><span class="muted">Nenhum erro recebido nesta execução.</span></div>`}
     </section>
 
     <footer>
-      Dica: envie este HTML por e-mail/Telegram ou salve em arquivo. (Gerado no n8n)
+      Relatório automatizado • Gerado via n8n
     </footer>
   </div>
 </body>
