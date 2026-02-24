@@ -1,6 +1,43 @@
 // implementação em um unico arquivo ideal para no code javascript
 const items = $input.all();
 
+// 1) Remove placeholder vazio: [{json:{}}] ou [{ }], etc.
+const nonEmptyItems = items.filter((it) => {
+  const j = (it && typeof it === "object" && "json" in it) ? it.json : it;
+  return j && typeof j === "object" && Object.keys(j).length > 0;
+});
+
+if (nonEmptyItems.length === 0) {
+  const now = new Date();
+  const iso = now.toISOString();
+
+  const html = `
+<!doctype html>
+<html lang="pt-br">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Relatório de Ocorrências - n8n</title>
+</head>
+<body style="font-family:system-ui; padding:24px;">
+  <h1 style="margin:0 0 8px;">Relatório de Ocorrências</h1>
+  <div style="color:#6b7280; margin-bottom:16px;">Gerado em: ${now.toLocaleString("pt-BR")}</div>
+  <div style="padding:16px; border:1px solid #e5e7eb; border-radius:8px; background:#fff;">
+    Nenhum erro recebido nesta execução.
+  </div>
+</body>
+</html>`.trim();
+
+  return [{
+    json: {
+      html,
+      total: 0,
+      erros: [],
+      meta: { generatedAt: iso, note: "Sem registros (placeholder vazio do node anterior)" }
+    }
+  }];
+}
+
+const itensValidos = nonEmptyItems;
+
 // ---------- helpers ----------
 function esc(s) {
   // escape básico para HTML
@@ -33,7 +70,7 @@ function pick(obj, path, fallback = "") {
 }
 
 // ---------- normalize ----------
-const erros = items.map((it, idx) => {
+const erros = itensValidos.map((it, idx) => {
   const raw = it.json ?? it; // por segurança
   const ex = raw; // se já vier "flat"
   const id = pick(ex, "id", pick(raw, "id", `#${idx + 1}`));
